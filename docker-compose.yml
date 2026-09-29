@@ -1,0 +1,93 @@
+name: demo_bank_talent_command_v6_enterprise
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-ats_user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-ats_password}"
+      POSTGRES_DB: "${POSTGRES_DB:-ats_db}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ats_user} -d ${POSTGRES_DB:-ats_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-ats_user}:${POSTGRES_PASSWORD:-ats_password}@db:5432/${POSTGRES_DB:-ats_db}}"
+      JWT_SECRET: "${JWT_SECRET}"
+      ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      ALLOWED_ORIGINS: "http://localhost:5173,http://localhost:4173"
+      ENABLE_AUDIT_LOG: "true"
+      RESUME_STORAGE_DIR: /app/storage/resumes
+      MODEL_STORAGE_DIR: /app/storage/models
+      DATA_RETENTION_DAYS: "365"
+
+      # Verified SQL answers remain authoritative. If the optional local Ollama
+      # model is enabled in .env.runtime, fuzzy/conversational questions use it
+      # only after governed Talent Command evidence has been retrieved.
+      AI_PROVIDER: "${AI_PROVIDER:-auto}"
+      OLLAMA_ENABLED: "${OLLAMA_ENABLED:-false}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-qwen2.5:3b}"
+      AI_TIMEOUT_SECONDS: "${AI_TIMEOUT_SECONDS:-18}"
+      AI_TEMPERATURE: "${AI_TEMPERATURE:-0.10}"
+      RAG_TOP_K: "5"
+      RAG_MAX_CONTEXT_CHARS: "${RAG_MAX_CONTEXT_CHARS:-14000}"
+      SEED_DEMO_USERS: "${SEED_DEMO_USERS:-true}"
+      SEED_PRESENTATION_DATA: "${SEED_PRESENTATION_DATA:-true}"
+      PRESENTATION_CANDIDATE_COUNT: "${PRESENTATION_CANDIDATE_COUNT:-1250}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - resume_storage:/app/storage/resumes
+      - model_storage:/app/storage/models
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c '
+        if [ "$${SEED_DEMO_USERS:-true}" = "true" ]; then python -m app.seed; fi &&
+        if [ "$${SEED_PRESENTATION_DATA:-true}" = "true" ]; then python -m app.seed_presentation_data "$${PRESENTATION_CANDIDATE_COUNT:-1250}"; fi &&
+        python -m app.train_model --if-missing &&
+        if [ "$${SEED_PRESENTATION_DATA:-true}" = "true" ]; then python -m app.demo_verify; fi &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      ' 
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()"]
+      interval: 5s
+      timeout: 4s
+      retries: 60
+      start_period: 180s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: "http://localhost:8000"
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  # V6 uses isolated enterprise volumes. This prevents stale V5.x
+  # database/model/resume state from contaminating the audited V6 demo.
+  # DEMO_STOP preserves these volumes; only an explicit volume reset removes them.
+  postgres_data:
+    name: demo_bank_talent_command_v6_enterprise_postgres_data
+  resume_storage:
+    name: demo_bank_talent_command_v6_enterprise_resume_storage
+  model_storage:
+    name: demo_bank_talent_command_v6_enterprise_model_storage

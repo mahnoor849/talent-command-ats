@@ -1,0 +1,65 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+!*.env.example
+*.pem
+*.key
+*.pfx
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Databases / runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+runtime/
+uploads/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated secrets/configs
+config/*.json
+!config/*.example.json
+!config/*.template.json
+
+# Existing project ignores
+# Local secrets / runtime configuration
+.env
+.env.*
+!.env.example
+
+# Generated runtime data
+backend/storage/
+*.db
+
+# Dependencies / build outputs
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
